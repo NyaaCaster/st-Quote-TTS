@@ -14,10 +14,12 @@ const SETTING_KEY = "quote_tts";
 
 // ===== 初始化 =====
 jQuery(async () => {
+    // 1. 初始化配置
     if (!extension_settings[SETTING_KEY]) {
         extension_settings[SETTING_KEY] = { characterMap: {} };
     }
 
+    // 2. 注入设置面板 (循环检查确保容器存在)
     const checkInterval = setInterval(async () => {
         const $settingsContainer = $("#extensions_settings");
         if ($settingsContainer.length > 0 && $(".quote-tts-extension-settings").length === 0) {
@@ -33,63 +35,77 @@ jQuery(async () => {
         }
     }, 1000);
 
+    // 3. 注册事件监听 (安全模式，防止卡死)
     initSafeEventListeners();
 });
 
 // ===== 核心逻辑：安全的事件监听 =====
 function initSafeEventListeners() {
     if (eventSource) {
-        eventSource.on(event_types.MESSAGE_RECEIVED, () => setTimeout(() => processChatSafe(), 200));
-        eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(() => processChatSafe(), 1000));
+        // 当一条新消息完全生成完毕时触发
+        eventSource.on(event_types.MESSAGE_RECEIVED, (data) => {
+            setTimeout(() => processChatSafe(), 200);
+        });
+
+        // 当切换聊天卡片或加载历史记录时触发
+        eventSource.on(event_types.CHAT_CHANGED, () => {
+            setTimeout(() => processChatSafe(), 1000);
+        });
     }
+
+    // 页面初次加载时执行一次
     setTimeout(() => processChatSafe(), 2000);
 }
 
-// ===== 核心逻辑：消息处理与注入 =====
+// ===== 核心逻辑：消息处理 =====
 function processChatSafe() {
     $('.mes_text').each(function() {
         const $msgBlock = $(this);
+        
+        // 1. 检查是否正在打字 (流式生成中不处理)
         if ($msgBlock.closest('.mes_block').find('.typing_indicator').length > 0) return;
+
+        // 2. 检查是否已经包含我们的按钮 (防止重复)
         if ($msgBlock.find('.quote-tts-btn').length > 0) return;
 
+        // 3. 执行注入
         const $parentBlock = $msgBlock.closest('.mes_block');
-        const blockSenderName = $parentBlock.find('.name_text').text().trim();
-        
-        injectPlayButtons($msgBlock, blockSenderName);
+        const charName = $parentBlock.find('.name_text').text().trim();
+        injectPlayButtons($msgBlock, charName);
     });
 }
 
-function injectPlayButtons($element, blockSenderName) {
+function injectPlayButtons($element, charName) {
     let html = $element.html();
     
-    // --- 升级后的正则 ---
-    // 允许名字中包含空格 (例如 "Village Elder")
-    // Group 1 (Name): ([^:<>&"'\n\r]+?) -> 匹配非冒号、非换行、非标签字符，非贪婪匹配
-    // Group 2 (Quote): ([“‘「『][\s\S]*?[”’」』]) -> 引号内容
-    const smartQuoteRegex = /(?:(?:^|>|[\n\r])\s*([^:<>&"'\n\r]+?):\s*)?([“‘「『][\s\S]*?[”’」』])(?!\s*<span class="quote-tts-btn)/g;
+    // 正则表达式修改：
+    // 已移除英文双引号 "
+    // 保留：
+    // 1. 中文双引号 “”
+    // 2. 中文单引号 ‘’
+    // 3. 日文引号 「」 『』
+    const quoteRegex = /([“‘「『])([\s\S]*?)([”’」』])/g;
 
     let hasChanges = false;
-    const newHtml = html.replace(smartQuoteRegex, (match, inlineName, content) => {
+    const newHtml = html.replace(quoteRegex, (match, openQuote, content, closeQuote) => {
+        // 过滤空内容
         if (!content || content.trim().length === 0) return match;
+        
+        // 防御性检查
         if (content.includes('quote-tts-btn')) return match;
 
-        // 提取纯文本
+        // 提取纯文本用于 TTS
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = content;
         const plainText = tempDiv.textContent || tempDiv.innerText || "";
         
-        // 角色名判断逻辑：
-        // 1. 如果正则抓到了 inlineName (如 "Alice")，使用它。
-        // 2. 否则使用消息块的发送者名字 (blockSenderName)。
-        const targetCharName = (inlineName && inlineName.trim()) ? inlineName.trim() : blockSenderName;
-        
         const safeText = encodeURIComponent(plainText);
-        const safeCharName = encodeURIComponent(targetCharName);
+        const safeCharName = encodeURIComponent(charName);
         
         hasChanges = true;
         
-        // 返回：原始匹配文本 + 按钮
-        return `${match}<span class="quote-tts-btn interactable" title="播放 (${targetCharName})" onclick="window.playQuoteTTS(this, '${safeText}', '${safeCharName}')">🔊</span>`;
+        // 生成带按钮的 HTML
+        return `${openQuote}${content}${closeQuote}<span class="quote-tts-btn interactable" title="播放" onclick="window.playQuoteTTS(this, '${safeText}', '${safeCharName}')">🔊</span>`;
     });
 
     if (hasChanges) {
@@ -98,7 +114,7 @@ function injectPlayButtons($element, blockSenderName) {
 }
 
 
-// ===== 逻辑功能：设置面板 (修复刷新扫描) =====
+// ===== 逻辑功能：设置面板 =====
 function renderCharacterSettings() {
     const $container = $('#quote_tts_char_list');
     $container.empty();
@@ -106,7 +122,6 @@ function renderCharacterSettings() {
     const context = getContext();
     const participants = new Set();
 
-    // 1. 基础角色
     if (context.name2) participants.add(context.name2);
     else participants.add("User");
 
@@ -115,35 +130,9 @@ function renderCharacterSettings() {
         if (currentCharacter && currentCharacter.name) participants.add(currentCharacter.name);
     }
 
-    // 2. 扫描消息块发送者
     $('#chat .name_text').each(function() {
         const name = $(this).text().trim();
         if (name) participants.add(name);
-    });
-
-    // 3. 深度扫描文本内容 (Inline Names) - 修复版
-    // 使用 .text() 获取纯文本，然后正则匹配 "Name: Quote"
-    // 允许名字带空格，排除冒号和换行符
-    $('#chat .mes_text').each(function() {
-        const text = $(this).text();
-        
-        // 正则解释：
-        // (?:^|\n)\s*       -> 行首或换行后的空白
-        // ([^:\n\r]{1,30})  -> 捕获组1：名字。非冒号、非换行，长度1-30 (允许空格)
-        // :\s*              -> 冒号 + 空白
-        // [“‘「『]          -> 紧接着左引号
-        const inlineNameScanRegex = /(?:^|\n)\s*([^:\n\r]{1,30}?):\s*[“‘「『]/g;
-        
-        let match;
-        while ((match = inlineNameScanRegex.exec(text)) !== null) {
-            if (match[1]) {
-                const foundName = match[1].trim();
-                // 简单的过滤，避免把奇怪的标点符号当成名字
-                if (foundName.length > 0 && !foundName.includes('"')) {
-                    participants.add(foundName);
-                }
-            }
-        }
     });
 
     if (participants.size === 0) {
@@ -151,10 +140,7 @@ function renderCharacterSettings() {
         return;
     }
 
-    // 排序
-    const sortedParticipants = Array.from(participants).sort();
-
-    sortedParticipants.forEach(charName => {
+    participants.forEach(charName => {
         const savedVoice = extension_settings[SETTING_KEY].characterMap[charName] || AVAILABLE_VOICES[0];
         let optionsHtml = '';
         AVAILABLE_VOICES.forEach(v => {
@@ -166,7 +152,7 @@ function renderCharacterSettings() {
             <div class="quote-tts-settings-row">
                 <span class="char-name" title="${charName}">${charName}</span>
                 <div class="quote-tts-controls">
-                    <span class="quote-tts-preview-btn interactable" title="试听 (${charName})">🔊</span>
+                    <span class="quote-tts-preview-btn interactable" title="试听">🔊</span>
                     <select class="text_pole">${optionsHtml}</select>
                 </div>
             </div>
@@ -191,7 +177,7 @@ function updateQuoteTTSChar(charName, voice) {
     saveSettingsDebounced();
 }
 
-// ===== 核心功能：播放 =====
+// ===== 核心功能：播放 (代理) =====
 async function playTTS(btnElement, text, voice) {
     const $btn = $(btnElement);
     if ($btn.hasClass('loading')) return;
