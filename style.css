@@ -1,0 +1,57 @@
+/* 播放按钮样式 */
+.quote-tts-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--smart-theme-body-color);
+    color: var(--smart-theme-body-color);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    margin-left: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    opacity: 0.6;
+    transition: all 0.2s;
+    vertical-align: middle;
+}
+
+.quote-tts-btn:hover {
+    opacity: 1;
+    background-color: var(--smart-theme-body-color);
+    color: var(--smart-theme-bg);
+}
+
+.quote-tts-btn.loading {
+    animation: spin 1s linear infinite;
+    cursor: wait;
+    border-style: dashed;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 设置面板样式 */
+.quote-tts-settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 5px;
+    border-bottom: 1px solid var(--smart-theme-border);
+}
+
+.quote-tts-settings-row span {
+    font-weight: bold;
+}
+
+.quote-tts-settings-row select {
+    width: 200px;
+    padding: 5px;
+    background-color: var(--smart-theme-input-bg);
+    color: var(--smart-theme-input-color);
+    border: 1px solid var(--smart-theme-border);
+}
