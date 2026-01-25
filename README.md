@@ -11,11 +11,11 @@
 
 ## 📦 安装方法
 在 `SillyTavern-扩展-安装扩展` 按钮输入以下链接进行安装：
-海外地址：
+- 海外地址：
 ```plain
 https://github.com/NyaaCaster/st-Quote-TTS.git
 ```
-国内地址：
+- 国内地址：
 ```plain
 https://gitee.com/NyaaCaster/st-Quote-TTS.git
 ```
