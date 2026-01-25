@@ -5,11 +5,11 @@ import { saveSettingsDebounced, getRequestHeaders, eventSource, event_types } fr
 const EXTENSION_NAME = "st-Quote-TTS"; 
 const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/${EXTENSION_NAME}`;
 const TARGET_ENDPOINT = "http://h.hony-wen.com:5050/v1/audio/speech";
-const API_KEY = "nyaa";
+// 注意：如果您的 Docker 容器没有设置 API_KEY，请保持这里为空字符串 ""，或者确认容器环境变量 API_KEY=nyaa
+const API_KEY = "nyaa"; 
 const MODEL_ID = "tts-1-hd";
 const AVAILABLE_VOICES = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-liaoning-XiaobeiNeural", "zh-CN-shaanxi-XiaoniNeural", "zh-HK-HiuGaaiNeural", "zh-HK-HiuMaanNeural", "zh-TW-HsiaoChenNeural", "zh-TW-HsiaoYuNeural", "zh-CN-YunjianNeural", "zh-CN-YunxiNeural", "zh-CN-YunxiaNeural", "zh-CN-YunyangNeural", "zh-HK-WanLungNeural", "zh-TW-YunJheNeural"];
 const PREVIEW_TEXT = "欢迎使用由妮娅开发的敏捷语音生成插件。";
-const ST_PROXY_URL = "/api/openai/custom/generate-voice";
 const SETTING_KEY = "quote_tts";
 
 // ===== 初始化 =====
@@ -19,7 +19,7 @@ jQuery(async () => {
         extension_settings[SETTING_KEY] = { characterMap: {} };
     }
 
-    // 2. 注入设置面板 (循环检查确保容器存在)
+    // 2. 注入设置面板
     const checkInterval = setInterval(async () => {
         const $settingsContainer = $("#extensions_settings");
         if ($settingsContainer.length > 0 && $(".quote-tts-extension-settings").length === 0) {
@@ -35,25 +35,20 @@ jQuery(async () => {
         }
     }, 1000);
 
-    // 3. 注册事件监听 (安全模式，防止卡死)
+    // 3. 注册事件监听
     initSafeEventListeners();
 });
 
 // ===== 核心逻辑：安全的事件监听 =====
 function initSafeEventListeners() {
     if (eventSource) {
-        // 当一条新消息完全生成完毕时触发
         eventSource.on(event_types.MESSAGE_RECEIVED, (data) => {
             setTimeout(() => processChatSafe(), 200);
         });
-
-        // 当切换聊天卡片或加载历史记录时触发
         eventSource.on(event_types.CHAT_CHANGED, () => {
             setTimeout(() => processChatSafe(), 1000);
         });
     }
-
-    // 页面初次加载时执行一次
     setTimeout(() => processChatSafe(), 2000);
 }
 
@@ -61,14 +56,9 @@ function initSafeEventListeners() {
 function processChatSafe() {
     $('.mes_text').each(function() {
         const $msgBlock = $(this);
-        
-        // 1. 检查是否正在打字 (流式生成中不处理)
         if ($msgBlock.closest('.mes_block').find('.typing_indicator').length > 0) return;
-
-        // 2. 检查是否已经包含我们的按钮 (防止重复)
         if ($msgBlock.find('.quote-tts-btn').length > 0) return;
 
-        // 3. 执行注入
         const $parentBlock = $msgBlock.closest('.mes_block');
         const charName = $parentBlock.find('.name_text').text().trim();
         injectPlayButtons($msgBlock, charName);
@@ -77,24 +67,13 @@ function processChatSafe() {
 
 function injectPlayButtons($element, charName) {
     let html = $element.html();
-    
-    // 正则表达式修改：
-    // 已移除英文双引号 "
-    // 保留：
-    // 1. 中文双引号 “”
-    // 2. 中文单引号 ‘’
-    // 3. 日文引号 「」 『』
     const quoteRegex = /([“‘「『])([\s\S]*?)([”’」』])/g;
 
     let hasChanges = false;
     const newHtml = html.replace(quoteRegex, (match, openQuote, content, closeQuote) => {
-        // 过滤空内容
         if (!content || content.trim().length === 0) return match;
-        
-        // 防御性检查
         if (content.includes('quote-tts-btn')) return match;
 
-        // 提取纯文本用于 TTS
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = content;
         const plainText = tempDiv.textContent || tempDiv.innerText || "";
@@ -103,8 +82,6 @@ function injectPlayButtons($element, charName) {
         const safeCharName = encodeURIComponent(charName);
         
         hasChanges = true;
-        
-        // 生成带按钮的 HTML
         return `${openQuote}${content}${closeQuote}<span class="quote-tts-btn interactable" title="播放" onclick="window.playQuoteTTS(this, '${safeText}', '${safeCharName}')">🔊</span>`;
     });
 
@@ -112,7 +89,6 @@ function injectPlayButtons($element, charName) {
         $element.html(newHtml);
     }
 }
-
 
 // ===== 逻辑功能：设置面板 =====
 function renderCharacterSettings() {
@@ -177,7 +153,8 @@ function updateQuoteTTSChar(charName, voice) {
     saveSettingsDebounced();
 }
 
-// ===== 核心功能：播放 (代理) =====
+// ===== 核心功能：播放 (直连模式) =====
+// 修改说明：不再经过 ST 代理，而是直接请求目标 API，以解决 Headers 传递导致的 401 问题
 async function playTTS(btnElement, text, voice) {
     const $btn = $(btnElement);
     if ($btn.hasClass('loading')) return;
@@ -186,31 +163,34 @@ async function playTTS(btnElement, text, voice) {
     $btn.addClass('loading').html('⏳');
 
     try {
-        // 获取 ST 的基础 Headers
-        const headers = getRequestHeaders();
-        // 显式添加 Content-Type
-        headers['Content-Type'] = 'application/json';
+        console.log(`[Quote TTS] Requesting: ${TARGET_ENDPOINT} | Voice: ${voice}`);
         
-        // ⚠️ 尝试方案：虽然是发给 ST 代理，但 ST 可能会透传 Authorization 头
-        // 如果 ST 代理不支持透传这个头，这行可能无效，但值得一试
-        // headers['Authorization'] = `Bearer ${API_KEY}`; 
+        // 构造直连 Headers
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        // 只有当 API_KEY 存在时才添加 Authorization 头
+        // 很多本地 Edge-TTS 容器如果没设置密码，收到 Authorization 头反而会报错
+        if (API_KEY && API_KEY.trim() !== "") {
+            headers['Authorization'] = `Bearer ${API_KEY}`;
+        }
 
-        const response = await fetch(ST_PROXY_URL, {
+        const response = await fetch(TARGET_ENDPOINT, {
             method: 'POST',
-            headers: headers, 
+            headers: headers,
             body: JSON.stringify({
-                provider_endpoint: TARGET_ENDPOINT, 
                 model: MODEL_ID,
                 input: text,
                 voice: voice,
                 response_format: 'mp3',
-                // 确保 API KEY 在 Body 里也传一份
-                api_key: API_KEY, 
-                token: API_KEY
+                speed: 1.0 // 可选：添加语速控制
             })
         });
 
-        if (!response.ok) throw new Error(`Proxy ${response.status}`);
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`API ${response.status}: ${errText}`);
+        }
         
         const blob = await response.blob();
         const audioUrl = URL.createObjectURL(blob);
@@ -221,6 +201,7 @@ async function playTTS(btnElement, text, voice) {
             URL.revokeObjectURL(audioUrl);
         };
         audio.onerror = () => {
+            console.error("Audio playback error");
             $btn.removeClass('loading').html('❌');
             setTimeout(() => $btn.html(originalIcon), 2000);
         };
