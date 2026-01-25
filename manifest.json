@@ -6,5 +6,7 @@
     "description": "自动检测对话中的引号文本并添加播放按钮 (Edge-TTS)。",
     "js": "index.js",
     "css": "style.css",
-    "loading_order": 1
+    "loading_order": 1,
+    "homePage": "https://github.com/NyaaCaster/st-Quote-TTS/",
+    "auto_update": true
 }
