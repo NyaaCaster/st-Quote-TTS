@@ -1,0 +1,8 @@
+{
+    "name": "Quote TTS",
+    "version": "1.0.0",
+    "author": "User",
+    "description": "为对话中的引号文本添加播放按钮，支持自定义 Edge-TTS 音色。",
+    "js": "index.js",
+    "css": "style.css"
+}
