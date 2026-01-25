@@ -16,19 +16,22 @@
     transition: all 0.2s;
     vertical-align: middle;
 }
+
 .quote-tts-btn:hover {
     opacity: 1;
     background-color: var(--smart-theme-body-color);
     color: var(--smart-theme-bg);
 }
+
 .quote-tts-btn.loading {
     animation: spin 1s linear infinite;
     cursor: wait;
     border-style: dashed;
 }
+
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-/* 设置列表容器 */
+/* 设置面板列表 */
 .quote-tts-list-container {
     border: 1px solid var(--smart-theme-border);
     background-color: var(--smart-theme-bg);
@@ -36,9 +39,9 @@
     max-height: 400px;
     overflow-y: auto;
     padding: 5px;
+    margin-top: 10px;
 }
 
-/* 列表行 */
 .quote-tts-settings-row {
     display: flex;
     justify-content: space-between;
@@ -46,7 +49,9 @@
     padding: 8px;
     border-bottom: 1px solid var(--smart-theme-border);
 }
+
 .quote-tts-settings-row:last-child { border-bottom: none; }
+
 .quote-tts-settings-row .char-name {
     font-weight: bold;
     overflow: hidden;
@@ -54,6 +59,7 @@
     white-space: nowrap;
     max-width: 45%;
 }
+
 .quote-tts-settings-row select {
     width: 50%;
     padding: 5px;
