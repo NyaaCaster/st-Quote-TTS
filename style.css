@@ -1,4 +1,35 @@
-/* ... (保留原有的 .quote-tts-btn 样式) ... */
+/* 播放按钮 */
+.quote-tts-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--smart-theme-body-color);
+    color: var(--smart-theme-body-color);
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    margin-left: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    opacity: 0.6;
+    transition: all 0.2s;
+    vertical-align: middle;
+}
+
+.quote-tts-btn:hover {
+    opacity: 1;
+    background-color: var(--smart-theme-body-color);
+    color: var(--smart-theme-bg);
+}
+
+.quote-tts-btn.loading {
+    animation: spin 1s linear infinite;
+    cursor: wait;
+    border-style: dashed;
+}
+
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 /* 设置面板列表容器 */
 .quote-tts-list-container {
@@ -11,7 +42,7 @@
     margin-top: 10px;
 }
 
-/* 列表行：使用 Flex 布局两端对齐 */
+/* 列表行：使用 Flex 布局 */
 .quote-tts-settings-row {
     display: flex;
     justify-content: space-between;
@@ -23,7 +54,7 @@
 
 .quote-tts-settings-row:last-child { border-bottom: none; }
 
-/* 角色名字 */
+/* 角色名称 */
 .quote-tts-settings-row .char-name {
     font-weight: bold;
     overflow: hidden;
@@ -33,17 +64,17 @@
     flex-shrink: 0;
 }
 
-/* 右侧控制区容器 */
+/* 右侧控制区 (试听按钮 + 下拉框) */
 .quote-tts-controls {
     display: flex;
     align-items: center;
-    gap: 8px; /* 按钮和下拉框的间距 */
+    gap: 8px;
     flex-grow: 1;
     justify-content: flex-end;
-    min-width: 0; /* 防止 flex 子元素溢出 */
+    min-width: 0;
 }
 
-/* 试听按钮样式 */
+/* 试听按钮 */
 .quote-tts-preview-btn {
     display: inline-flex;
     align-items: center;
@@ -72,10 +103,10 @@
     border-style: dashed;
 }
 
-/* 下拉菜单 */
+/* 下拉框 */
 .quote-tts-settings-row select {
-    flex-grow: 1; /* 占据剩余空间 */
-    max-width: 200px; /* 限制最大宽度 */
+    flex-grow: 1;
+    max-width: 200px;
     padding: 5px;
     border-radius: 5px;
 }
