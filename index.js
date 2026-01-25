@@ -33,27 +33,23 @@ jQuery(async () => {
                 console.error("[Quote TTS] 加载 HTML 失败", e);
             }
         }
-    }, 1000); // 放宽检查间隔，减轻加载负担
+    }, 1000);
 
-    // 3. 注册事件监听 (安全模式)
+    // 3. 注册事件监听 (安全模式，防止卡死)
     initSafeEventListeners();
 });
 
 // ===== 核心逻辑：安全的事件监听 =====
 function initSafeEventListeners() {
-    // 方案：只在消息完全生成后、或者切换聊天时处理
-    // 这避免了在流式生成过程中频繁修改 DOM 导致的死循环
-    
     if (eventSource) {
         // 当一条新消息完全生成完毕时触发
         eventSource.on(event_types.MESSAGE_RECEIVED, (data) => {
-            // 延迟一点执行，确保 ST 内部的 Markdown 渲染已完成
             setTimeout(() => processChatSafe(), 200);
         });
 
         // 当切换聊天卡片或加载历史记录时触发
         eventSource.on(event_types.CHAT_CHANGED, () => {
-            setTimeout(() => processChatSafe(), 1000); // 历史记录加载较慢，多给点时间
+            setTimeout(() => processChatSafe(), 1000);
         });
     }
 
@@ -63,16 +59,13 @@ function initSafeEventListeners() {
 
 // ===== 核心逻辑：消息处理 =====
 function processChatSafe() {
-    // 遍历所有消息
     $('.mes_text').each(function() {
         const $msgBlock = $(this);
         
-        // 1. 检查是否正在打字 (流式生成中)
-        // 如果正在生成，不要干扰 DOM，否则会打断打字机效果或导致光标跳动
+        // 1. 检查是否正在打字 (流式生成中不处理)
         if ($msgBlock.closest('.mes_block').find('.typing_indicator').length > 0) return;
 
-        // 2. 检查是否已经包含我们的按钮
-        // 这是一个极低成本的检查，防止重复处理
+        // 2. 检查是否已经包含我们的按钮 (防止重复)
         if ($msgBlock.find('.quote-tts-btn').length > 0) return;
 
         // 3. 执行注入
@@ -83,22 +76,25 @@ function processChatSafe() {
 }
 
 function injectPlayButtons($element, charName) {
-    // 获取原始 HTML (包含可能的 <em>, <strong> 等标签)
     let html = $element.html();
     
-    // 正则：匹配引号内容
-    const quoteRegex = /([“"‘「『])([\s\S]*?)([”"’」』])/g;
+    // 正则表达式修改：
+    // 已移除英文双引号 "
+    // 保留：
+    // 1. 中文双引号 “”
+    // 2. 中文单引号 ‘’
+    // 3. 日文引号 「」 『』
+    const quoteRegex = /([“‘「『])([\s\S]*?)([”’」』])/g;
 
     let hasChanges = false;
     const newHtml = html.replace(quoteRegex, (match, openQuote, content, closeQuote) => {
         // 过滤空内容
         if (!content || content.trim().length === 0) return match;
         
-        // 防御性检查：如果内容里已经有我们的按钮了，跳过 (应对极端情况)
+        // 防御性检查
         if (content.includes('quote-tts-btn')) return match;
 
-        // 提取纯文本用于 TTS (去除 HTML 标签，例如 "<i>你好</i>" -> "你好")
-        // 创建一个临时 DOM 元素来提取 textContent
+        // 提取纯文本用于 TTS
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = content;
         const plainText = tempDiv.textContent || tempDiv.innerText || "";
@@ -108,8 +104,7 @@ function injectPlayButtons($element, charName) {
         
         hasChanges = true;
         
-        // 这里的 content 是原始带 HTML 的内容，必须原样放回，否则会破坏 Markdown 格式
-        // 按钮只追加在后面
+        // 生成带按钮的 HTML
         return `${openQuote}${content}${closeQuote}<span class="quote-tts-btn interactable" title="播放" onclick="window.playQuoteTTS(this, '${safeText}', '${safeCharName}')">🔊</span>`;
     });
 
@@ -233,7 +228,6 @@ async function playTTS(btnElement, text, voice) {
 window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
     if (event) event.stopPropagation();
     
-    // 注意：这里的 encodedText 已经是去除 HTML 标签后的纯文本
     const text = decodeURIComponent(encodedText);
     const charName = decodeURIComponent(encodedCharName);
     const settings = extension_settings[SETTING_KEY] || { characterMap: {} };
