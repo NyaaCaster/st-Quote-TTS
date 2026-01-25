@@ -1,17 +1,22 @@
 import { extension_settings, getContext } from "../../../extensions.js";
-import { saveSettingsDebounced } from "../../../../script.js";
+// 引入 getRequestHeaders 以通过 SillyTavern 的后端鉴权
+import { saveSettingsDebounced, getRequestHeaders } from "../../../../script.js";
 
 // ===== 配置常量 =====
 const EXTENSION_NAME = "st-Quote-TTS"; 
 const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/${EXTENSION_NAME}`;
 
-const HARDCODED_API_URL = "http://h.hony-wen.com:5050/v1/audio/speech";
-const HARDCODED_API_KEY = "nyaa"; // 必须保持鉴权
-const DEFAULT_MODEL = "tts-1-hd";
+// Edge-TTS 配置
+const TARGET_ENDPOINT = "http://h.hony-wen.com:5050/v1/audio/speech";
+const API_KEY = "nyaa";
+const MODEL_ID = "tts-1-hd";
 const AVAILABLE_VOICES = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunxiNeural", "zh-CN-YunyangNeural"];
 
 // 试听文本
 const PREVIEW_TEXT = "欢迎使用由妮娅开发的敏捷语音生成插件。";
+
+// ST 后端代理接口 (这是解决 CORS 的关键)
+const ST_PROXY_URL = "/api/openai/custom/generate-voice";
 
 // ===== 初始化设置 =====
 const SETTING_KEY = "quote_tts";
@@ -116,7 +121,7 @@ function updateQuoteTTSChar(charName, voice) {
     saveSettingsDebounced();
 }
 
-// ===== 核心功能：统一播放函数 (含鉴权) =====
+// ===== 核心功能：使用 ST 后端代理播放 (解决 CORS) =====
 
 async function playTTS(btnElement, text, voice) {
     const $btn = $(btnElement);
@@ -126,30 +131,29 @@ async function playTTS(btnElement, text, voice) {
     $btn.addClass('loading').html('⏳');
 
     try {
-        // 构建请求头 (严格遵守鉴权要求)
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${HARDCODED_API_KEY}`
-        };
-
-        const response = await fetch(HARDCODED_API_URL, {
+        // 使用 getRequestHeaders() 获取 SillyTavern 前端需要的 CSRF Token 等头部
+        // 请求发往 ST 后端，而非直接发往 Edge-TTS
+        const response = await fetch(ST_PROXY_URL, {
             method: 'POST',
-            mode: 'cors', 
-            credentials: 'omit',
-            headers: headers,
+            headers: getRequestHeaders(), 
             body: JSON.stringify({
-                model: DEFAULT_MODEL,
+                // 这些参数会被 ST 后端转发给 Edge-TTS
+                provider_endpoint: TARGET_ENDPOINT, 
+                model: MODEL_ID,
                 input: text,
                 voice: voice,
-                response_format: "mp3"
+                response_format: 'mp3',
+                // 我们尝试将 Key 放入 payload，ST 的某些代理实现支持这样传递
+                // 如果 ST 后端不转发这个 api_key，通常 OpenAI 兼容接口默认也是 Bearer Token 鉴权
+                api_key: API_KEY, 
+                token: API_KEY // 尝试多种常用字段名以防万一
             })
         });
 
         if (!response.ok) {
-            // 如果能获取到服务器的具体错误信息则显示，否则显示状态码
-            let errText = "";
-            try { errText = await response.text(); } catch(e) {}
-            throw new Error(`Server ${response.status}: ${errText}`);
+            let errorMsg = response.statusText;
+            try { errorMsg = await response.text(); } catch(e){}
+            throw new Error(`ST Backend ${response.status}: ${errorMsg}`);
         }
         
         const blob = await response.blob();
@@ -170,18 +174,9 @@ async function playTTS(btnElement, text, voice) {
         await audio.play();
 
     } catch (e) {
-        console.error("TTS Fetch Error:", e);
+        console.error("TTS Proxy Error:", e);
+        if (typeof toastr !== 'undefined') toastr.error(`TTS 失败: ${e.message}`);
         $btn.removeClass('loading').html('❌');
-        
-        let msg = "请求失败";
-        if (e.message.includes("Failed to fetch")) {
-            msg = "跨域(CORS)或网络拦截";
-            console.warn("提示: 虽然服务器返回 OPTIONS 200，但可能缺少 Access-Control-Allow-Headers: Authorization 头。请检查服务器配置。");
-        } else {
-            msg = e.message;
-        }
-
-        if (typeof toastr !== 'undefined') toastr.error(`TTS Error: ${msg}`);
         setTimeout(() => $btn.html(originalIcon), 2000);
     }
 }
