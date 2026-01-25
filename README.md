@@ -1,4 +1,5 @@
 # SillyTavern Quote TTS
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 > _一个为 _[_SillyTavern_](https://github.com/SillyTavern/SillyTavern)_ 设计的敏捷语音扩展插件_
 
 ## ✨ 功能特性
@@ -52,6 +53,3 @@ https://gitee.com/NyaaCaster/st-Quote-TTS.git
    - `zh-HK-WanLungNeural` (男声，香港粤语，通用，友好/积极)
    - `zh-TW-YunJheNeural` (男声，台湾国语，通用，友好/积极)
 5. 修改后设置会自动保存。
-
-## 📄 License
-[MIT License](LICENSE) 
