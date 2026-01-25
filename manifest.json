@@ -1,12 +1,13 @@
 {
-    "name": "Quote TTS",
     "display_name": "Quote TTS",
-    "version": "1.0.3",
-    "author": "User",
-    "description": "自动检测对话中的引号文本并添加播放按钮 (Edge-TTS)。",
+    "name": "Quote TTS",
+    "loading_order": 1,
+    "requires": [],
+    "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "loading_order": 1,
+    "author": "User",
+    "version": "1.0.4",
     "homePage": "https://github.com/NyaaCaster/st-Quote-TTS/",
     "auto_update": true
 }
