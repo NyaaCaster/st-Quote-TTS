@@ -1,3 +1,4 @@
+# SillyTavern Quote TTS
 > _一个为 _[_SillyTavern_](https://github.com/SillyTavern/SillyTavern)_ 设计的敏捷语音扩展插件_
 
 ## ✨ 功能特性
