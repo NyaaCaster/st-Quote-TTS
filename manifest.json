@@ -1,7 +1,7 @@
 {
     "name": "Quote TTS",
     "display_name": "Quote TTS",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "author": "User",
     "description": "自动检测对话中的引号文本并添加播放按钮 (Edge-TTS)。",
     "js": "index.js",
