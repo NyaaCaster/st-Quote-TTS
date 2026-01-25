@@ -6,7 +6,7 @@ const EXTENSION_NAME = "st-Quote-TTS";
 const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/${EXTENSION_NAME}`;
 
 const HARDCODED_API_URL = "http://h.hony-wen.com:5050/v1/audio/speech";
-// const HARDCODED_API_KEY = "nyaa"; // CORS修复：注释掉 Key，避免触发复杂跨域检查
+const HARDCODED_API_KEY = "nyaa"; // 必须保持鉴权
 const DEFAULT_MODEL = "tts-1-hd";
 const AVAILABLE_VOICES = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunxiNeural", "zh-CN-YunyangNeural"];
 
@@ -26,7 +26,6 @@ async function loadSettings() {
 jQuery(async () => {
     await loadSettings();
 
-    // 循环检查容器，修复面板消失问题
     const checkInterval = setInterval(async () => {
         const $settingsContainer = $("#extensions_settings");
         
@@ -36,10 +35,8 @@ jQuery(async () => {
             try {
                 const settingsHtml = await $.get(`${EXTENSION_FOLDER_PATH}/settings.html`);
                 $settingsContainer.append(settingsHtml);
-
                 $("#quote_tts_refresh_btn").on("click", renderCharacterSettings);
                 initChatListener();
-                
                 console.log("[Quote TTS] 面板加载成功");
             } catch (error) {
                 console.error(`[Quote TTS] 加载 settings.html 失败: ${error}`);
@@ -54,7 +51,6 @@ function renderCharacterSettings() {
     const $container = $('#quote_tts_char_list');
     $container.empty();
 
-    // --- 1. 获取角色列表 ---
     const context = getContext();
     const participants = new Set();
 
@@ -76,7 +72,6 @@ function renderCharacterSettings() {
         return;
     }
 
-    // --- 2. 渲染列表项 ---
     participants.forEach(charName => {
         const savedVoice = extension_settings[SETTING_KEY].characterMap[charName] || AVAILABLE_VOICES[0];
 
@@ -106,7 +101,7 @@ function renderCharacterSettings() {
         $row.find('.quote-tts-preview-btn').on('click', async function(e) {
             e.stopPropagation();
             const currentSelectedVoice = $row.find('select').val();
-            await playTTS(this, PREVIEW_TEXT, currentSelectedVoice); // 复用统一的播放函数
+            await playTTS(this, PREVIEW_TEXT, currentSelectedVoice);
         });
 
         $container.append($row);
@@ -121,7 +116,7 @@ function updateQuoteTTSChar(charName, voice) {
     saveSettingsDebounced();
 }
 
-// ===== 核心功能：统一播放函数 (含 CORS 修复) =====
+// ===== 核心功能：统一播放函数 (含鉴权) =====
 
 async function playTTS(btnElement, text, voice) {
     const $btn = $(btnElement);
@@ -131,17 +126,16 @@ async function playTTS(btnElement, text, voice) {
     $btn.addClass('loading').html('⏳');
 
     try {
-        // 构建 Headers
+        // 构建请求头 (严格遵守鉴权要求)
         const headers = {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${HARDCODED_API_KEY}`
         };
-        // CORS 修复：如果需要 Authorization 再取消注释，但通常 dummy key 会导致 CORS 失败
-        // headers['Authorization'] = `Bearer ${HARDCODED_API_KEY}`;
 
         const response = await fetch(HARDCODED_API_URL, {
             method: 'POST',
-            mode: 'cors', // 明确指定 CORS
-            credentials: 'omit', // 修复：不发送 Cookie，降低 CORS 门槛
+            mode: 'cors', 
+            credentials: 'omit',
             headers: headers,
             body: JSON.stringify({
                 model: DEFAULT_MODEL,
@@ -152,9 +146,10 @@ async function playTTS(btnElement, text, voice) {
         });
 
         if (!response.ok) {
-            // 尝试读取错误信息
-            const errText = await response.text();
-            throw new Error(`API ${response.status}: ${errText}`);
+            // 如果能获取到服务器的具体错误信息则显示，否则显示状态码
+            let errText = "";
+            try { errText = await response.text(); } catch(e) {}
+            throw new Error(`Server ${response.status}: ${errText}`);
         }
         
         const blob = await response.blob();
@@ -162,26 +157,36 @@ async function playTTS(btnElement, text, voice) {
         const audio = new Audio(audioUrl);
         
         audio.onended = () => {
-            $btn.removeClass('loading').html(originalIcon); // 恢复原图标
+            $btn.removeClass('loading').html(originalIcon);
             URL.revokeObjectURL(audioUrl);
         };
         audio.onerror = () => {
             console.error("Audio playback error");
             $btn.removeClass('loading').html('❌');
+            if (typeof toastr !== 'undefined') toastr.error("音频解码失败");
             setTimeout(() => $btn.html(originalIcon), 2000);
         };
         
         await audio.play();
 
     } catch (e) {
-        console.error("TTS Error:", e);
-        if (typeof toastr !== 'undefined') toastr.error(`播放失败: ${e.message || "网络/CORS错误"}`);
+        console.error("TTS Fetch Error:", e);
         $btn.removeClass('loading').html('❌');
+        
+        let msg = "请求失败";
+        if (e.message.includes("Failed to fetch")) {
+            msg = "跨域(CORS)或网络拦截";
+            console.warn("提示: 虽然服务器返回 OPTIONS 200，但可能缺少 Access-Control-Allow-Headers: Authorization 头。请检查服务器配置。");
+        } else {
+            msg = e.message;
+        }
+
+        if (typeof toastr !== 'undefined') toastr.error(`TTS Error: ${msg}`);
         setTimeout(() => $btn.html(originalIcon), 2000);
     }
 }
 
-// 暴露给 Window 供 HTML onclick 使用 (聊天记录中的按钮)
+// 暴露给 Window
 window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
     if (event) event.stopPropagation();
     
@@ -190,7 +195,6 @@ window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
     const settings = extension_settings[SETTING_KEY] || { characterMap: {} };
     const voice = settings.characterMap[charName] || AVAILABLE_VOICES[0];
     
-    // 调用统一的播放函数
     await playTTS(btnElement, text, voice);
 };
 
