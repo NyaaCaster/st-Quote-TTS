@@ -14,12 +14,10 @@ const SETTING_KEY = "quote_tts";
 
 // ===== 初始化 =====
 jQuery(async () => {
-    // 1. 初始化配置
     if (!extension_settings[SETTING_KEY]) {
         extension_settings[SETTING_KEY] = { characterMap: {} };
     }
 
-    // 2. 注入设置面板
     const checkInterval = setInterval(async () => {
         const $settingsContainer = $("#extensions_settings");
         if ($settingsContainer.length > 0 && $(".quote-tts-extension-settings").length === 0) {
@@ -35,7 +33,6 @@ jQuery(async () => {
         }
     }, 1000);
 
-    // 3. 注册事件监听
     initSafeEventListeners();
 });
 
@@ -48,14 +45,11 @@ function initSafeEventListeners() {
     setTimeout(() => processChatSafe(), 2000);
 }
 
-// ===== 核心逻辑：消息处理 =====
+// ===== 核心逻辑：消息处理与注入 =====
 function processChatSafe() {
     $('.mes_text').each(function() {
         const $msgBlock = $(this);
-        
-        // 跳过正在生成的文本
         if ($msgBlock.closest('.mes_block').find('.typing_indicator').length > 0) return;
-        // 跳过已处理的文本
         if ($msgBlock.find('.quote-tts-btn').length > 0) return;
 
         const $parentBlock = $msgBlock.closest('.mes_block');
@@ -68,30 +62,25 @@ function processChatSafe() {
 function injectPlayButtons($element, blockSenderName) {
     let html = $element.html();
     
-    // 正则表达式升级：支持 "角色名: “引号内容”" 的格式识别
-    // Group 1 (可选): 角色名后缀 (匹配冒号前的名字，排除标签和特殊符号，限制长度20)
-    // Group 2: 引号内容
-    // 逻辑：(?:(?:^|>|[\n\r])\s*([^\s:<>&"']{1,20}?):\s*)?  --> 尝试匹配 "Name:"
-    //       ([“‘「『][\s\S]*?[”’」』])                     --> 匹配引号内容
-    //       (?!\s*<span class="quote-tts-btn)              --> 排除已存在的按钮
-    const smartQuoteRegex = /(?:(?:^|>|[\n\r])\s*([^\s:<>&"']{1,20}?):\s*)?([“‘「『][\s\S]*?[”’」』])(?!\s*<span class="quote-tts-btn)/g;
+    // --- 升级后的正则 ---
+    // 允许名字中包含空格 (例如 "Village Elder")
+    // Group 1 (Name): ([^:<>&"'\n\r]+?) -> 匹配非冒号、非换行、非标签字符，非贪婪匹配
+    // Group 2 (Quote): ([“‘「『][\s\S]*?[”’」』]) -> 引号内容
+    const smartQuoteRegex = /(?:(?:^|>|[\n\r])\s*([^:<>&"'\n\r]+?):\s*)?([“‘「『][\s\S]*?[”’」』])(?!\s*<span class="quote-tts-btn)/g;
 
     let hasChanges = false;
     const newHtml = html.replace(smartQuoteRegex, (match, inlineName, content) => {
-        // inlineName 是正则 Group 1 捕获的文本内角色名 (例如 "Alice")
-        // content    是正则 Group 2 捕获的引号文本 (例如 "“你好”")
-        
         if (!content || content.trim().length === 0) return match;
-        
-        // 防御性检查
         if (content.includes('quote-tts-btn')) return match;
 
-        // 提取纯文本用于 TTS
+        // 提取纯文本
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = content;
         const plainText = tempDiv.textContent || tempDiv.innerText || "";
         
-        // 核心逻辑：如果正则抓到了文内名字(inlineName)，就优先用它；否则用消息块发送者(blockSenderName)
+        // 角色名判断逻辑：
+        // 1. 如果正则抓到了 inlineName (如 "Alice")，使用它。
+        // 2. 否则使用消息块的发送者名字 (blockSenderName)。
         const targetCharName = (inlineName && inlineName.trim()) ? inlineName.trim() : blockSenderName;
         
         const safeText = encodeURIComponent(plainText);
@@ -99,13 +88,7 @@ function injectPlayButtons($element, blockSenderName) {
         
         hasChanges = true;
         
-        // 如果匹配到了 "Name: Quote"，match 包含整个字符串，我们需要小心处理替换逻辑
-        // 因为 replace 替换的是整个 match，所以我们要尽量保持原有格式
-        // 这里稍微复杂一点：如果 match 包含了 Name:，我们需要把 Name: 也放回去
-        
-        // 简单策略：直接在 content (引号部分) 后面追加按钮。
-        // 但我们需要返回完整的 match 字符串，并在最后插入按钮。
-        
+        // 返回：原始匹配文本 + 按钮
         return `${match}<span class="quote-tts-btn interactable" title="播放 (${targetCharName})" onclick="window.playQuoteTTS(this, '${safeText}', '${safeCharName}')">🔊</span>`;
     });
 
@@ -115,7 +98,7 @@ function injectPlayButtons($element, blockSenderName) {
 }
 
 
-// ===== 逻辑功能：设置面板 (增强版扫描) =====
+// ===== 逻辑功能：设置面板 (修复刷新扫描) =====
 function renderCharacterSettings() {
     const $container = $('#quote_tts_char_list');
     $container.empty();
@@ -132,21 +115,34 @@ function renderCharacterSettings() {
         if (currentCharacter && currentCharacter.name) participants.add(currentCharacter.name);
     }
 
-    // 2. 扫描消息块发送者 (Block Sender)
+    // 2. 扫描消息块发送者
     $('#chat .name_text').each(function() {
         const name = $(this).text().trim();
         if (name) participants.add(name);
     });
 
-    // 3. 深度扫描文本内容 (Inline Names)
-    // 查找形如 "Alice: “..." 的模式，将 Alice 加入列表
+    // 3. 深度扫描文本内容 (Inline Names) - 修复版
+    // 使用 .text() 获取纯文本，然后正则匹配 "Name: Quote"
+    // 允许名字带空格，排除冒号和换行符
     $('#chat .mes_text').each(function() {
         const text = $(this).text();
-        // 简单的正则来提取文本中的名字
-        const inlineNameScanRegex = /(?:^|\n)\s*([^\s:<>&"']{1,20}?):\s*[“‘「『]/g;
+        
+        // 正则解释：
+        // (?:^|\n)\s*       -> 行首或换行后的空白
+        // ([^:\n\r]{1,30})  -> 捕获组1：名字。非冒号、非换行，长度1-30 (允许空格)
+        // :\s*              -> 冒号 + 空白
+        // [“‘「『]          -> 紧接着左引号
+        const inlineNameScanRegex = /(?:^|\n)\s*([^:\n\r]{1,30}?):\s*[“‘「『]/g;
+        
         let match;
         while ((match = inlineNameScanRegex.exec(text)) !== null) {
-            if (match[1]) participants.add(match[1].trim());
+            if (match[1]) {
+                const foundName = match[1].trim();
+                // 简单的过滤，避免把奇怪的标点符号当成名字
+                if (foundName.length > 0 && !foundName.includes('"')) {
+                    participants.add(foundName);
+                }
+            }
         }
     });
 
@@ -155,7 +151,7 @@ function renderCharacterSettings() {
         return;
     }
 
-    // 排序：将主角色放前面，其他按字母排序
+    // 排序
     const sortedParticipants = Array.from(participants).sort();
 
     sortedParticipants.forEach(charName => {
@@ -195,7 +191,7 @@ function updateQuoteTTSChar(charName, voice) {
     saveSettingsDebounced();
 }
 
-// ===== 核心功能：播放 (代理) =====
+// ===== 核心功能：播放 =====
 async function playTTS(btnElement, text, voice) {
     const $btn = $(btnElement);
     if ($btn.hasClass('loading')) return;
@@ -249,7 +245,6 @@ window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
     const text = decodeURIComponent(encodedText);
     const charName = decodeURIComponent(encodedCharName);
     const settings = extension_settings[SETTING_KEY] || { characterMap: {} };
-    // 如果找不到特定名字的配置，尝试回退到默认或者 BlockSender (这由调用时的逻辑保证，这里只管查表)
     const voice = settings.characterMap[charName] || AVAILABLE_VOICES[0];
     
     await playTTS(btnElement, text, voice);
