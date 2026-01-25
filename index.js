@@ -1,31 +1,81 @@
-// ... (之前的 import 和 常量定义 保持不变)
+import { extension_settings, getContext } from "../../../extensions.js";
+import { saveSettingsDebounced } from "../../../../script.js";
 
-// 新增常量：试听文本
+// ===== 配置常量 =====
+const EXTENSION_NAME = "st-Quote-TTS"; // 必须与 GitHub 仓库文件夹名一致
+const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/${EXTENSION_NAME}`;
+
+const HARDCODED_API_URL = "http://h.hony-wen.com:5050/v1/audio/speech";
+const HARDCODED_API_KEY = "nyaa";
+const DEFAULT_MODEL = "tts-1-hd";
+const AVAILABLE_VOICES = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunxiNeural", "zh-CN-YunyangNeural"];
+
+// 试听文本
 const PREVIEW_TEXT = "欢迎使用由妮娅开发的敏捷语音生成插件。";
 
-// ... (loadSettings, jQuery init 等保持不变) ...
+// ===== 初始化设置 =====
+const SETTING_KEY = "quote_tts";
 
-// ===== 核心逻辑：获取角色列表 (修改了内部 HTML 结构) =====
+async function loadSettings() {
+    if (!extension_settings[SETTING_KEY]) {
+        extension_settings[SETTING_KEY] = { characterMap: {} };
+    }
+}
 
+// ===== 核心逻辑：UI 注入 (修复面板消失问题) =====
+jQuery(async () => {
+    // 1. 加载设置
+    await loadSettings();
+
+    // 2. 循环检查容器是否存在，确保 HTML 能正确插入
+    const checkInterval = setInterval(async () => {
+        const $settingsContainer = $("#extensions_settings");
+        
+        // 如果容器存在，且我们的面板还没插入
+        if ($settingsContainer.length > 0 && $(".quote-tts-extension-settings").length === 0) {
+            clearInterval(checkInterval); // 停止检查
+            
+            try {
+                // 加载外部 HTML
+                const settingsHtml = await $.get(`${EXTENSION_FOLDER_PATH}/settings.html`);
+                $settingsContainer.append(settingsHtml);
+
+                // 绑定事件 (HTML 插入后)
+                $("#quote_tts_refresh_btn").on("click", renderCharacterSettings);
+                
+                // 启动聊天监听
+                initChatListener();
+                
+                console.log("[Quote TTS] 面板加载成功");
+            } catch (error) {
+                console.error(`[Quote TTS] 加载 settings.html 失败，请检查路径: ${error}`);
+            }
+        }
+    }, 500); // 每 500ms 检查一次
+});
+
+// ===== 逻辑功能实现 =====
+
+// 渲染角色列表 (包含试听按钮 + 增强的角色读取)
 function renderCharacterSettings() {
     const $container = $('#quote_tts_char_list');
     $container.empty();
 
+    // --- 1. 获取角色列表 (增强版逻辑) ---
     const context = getContext();
     const participants = new Set();
 
-    // ... (获取角色名的逻辑保持不变: user, char, DOM scan) ...
-    // 2. 添加当前用户
+    // 添加用户
     if (context.name2) participants.add(context.name2);
     else participants.add("User");
 
-    // 3. 添加当前角色
+    // 添加当前角色
     if (context.characterId !== undefined && context.characterId !== null) {
         const currentCharacter = window.characters && window.characters[context.characterId];
         if (currentCharacter && currentCharacter.name) participants.add(currentCharacter.name);
     }
 
-    // 4. 扫描 DOM
+    // 扫描 DOM 聊天记录 (补全群聊)
     $('#chat .name_text').each(function() {
         const name = $(this).text().trim();
         if (name) participants.add(name);
@@ -36,6 +86,7 @@ function renderCharacterSettings() {
         return;
     }
 
+    // --- 2. 渲染列表项 ---
     participants.forEach(charName => {
         const savedVoice = extension_settings[SETTING_KEY].characterMap[charName] || AVAILABLE_VOICES[0];
 
@@ -45,7 +96,6 @@ function renderCharacterSettings() {
             optionsHtml += `<option value="${v}" ${selected}>${v}</option>`;
         });
 
-        // --- 修改点：HTML 结构增加了试听按钮 ---
         const $row = $(`
             <div class="quote-tts-settings-row">
                 <span class="char-name" title="${charName}">${charName}</span>
@@ -60,37 +110,37 @@ function renderCharacterSettings() {
             </div>
         `);
 
-        // 绑定下拉框保存事件
+        // 事件：更改音色保存
         $row.find('select').on('change', function() {
             const newVal = $(this).val();
             updateQuoteTTSChar(charName, newVal);
         });
 
-        // --- 修改点：绑定试听按钮点击事件 ---
+        // 事件：点击试听
         $row.find('.quote-tts-preview-btn').on('click', async function(e) {
             e.stopPropagation();
-            // 获取当前行下拉框中选中的值 (实时获取，而非读取保存的设置)
             const currentSelectedVoice = $row.find('select').val();
             await playPreviewTTS(this, currentSelectedVoice);
         });
 
         $container.append($row);
     });
-    
+
     if (typeof toastr !== 'undefined') toastr.success(`已加载 ${participants.size} 名角色`);
 }
 
-// ... (updateQuoteTTSChar, initChatListener, processAllMessages, injectPlayButtons 等保持不变) ...
+function updateQuoteTTSChar(charName, voice) {
+    if (!extension_settings[SETTING_KEY]) extension_settings[SETTING_KEY] = { characterMap: {} };
+    extension_settings[SETTING_KEY].characterMap[charName] = voice;
+    saveSettingsDebounced();
+}
 
-// ===== 新增：试听播放逻辑 =====
+// ===== 核心功能：试听播放 =====
 
 async function playPreviewTTS(btnElement, voice) {
     const $btn = $(btnElement);
-    
-    // 防止重复点击
     if ($btn.hasClass('loading')) return;
 
-    // UI Loading
     const originalIcon = $btn.html();
     $btn.addClass('loading').html('⏳');
 
@@ -103,7 +153,7 @@ async function playPreviewTTS(btnElement, voice) {
             },
             body: JSON.stringify({
                 model: DEFAULT_MODEL,
-                input: PREVIEW_TEXT, // 使用固定的试听文本
+                input: PREVIEW_TEXT, 
                 voice: voice,
                 response_format: "mp3"
             })
@@ -119,21 +169,103 @@ async function playPreviewTTS(btnElement, voice) {
             $btn.removeClass('loading').html(originalIcon);
             URL.revokeObjectURL(audioUrl);
         };
-        
         audio.onerror = () => {
-            console.error("Preview playback failed");
             $btn.removeClass('loading').html('❌');
-            setTimeout(() => $btn.html(originalIcon), 2000);
         };
-
         await audio.play();
 
     } catch (e) {
         console.error("Preview Error:", e);
-        if (typeof toastr !== 'undefined') toastr.error("试听播放失败");
+        if (typeof toastr !== 'undefined') toastr.error("试听失败");
         $btn.removeClass('loading').html('❌');
         setTimeout(() => $btn.html(originalIcon), 2000);
     }
 }
 
-// ... (window.playQuoteTTS 保持不变)
+// ===== 核心功能：聊天播放 =====
+
+function initChatListener() {
+    const observer = new MutationObserver(() => processAllMessages());
+    const chatContainer = document.querySelector('#chat');
+    if (chatContainer) {
+        observer.observe(chatContainer, { childList: true, subtree: true });
+    }
+    processAllMessages();
+}
+
+function processAllMessages() {
+    $('.mes_text').each(function() {
+        const $msgBlock = $(this);
+        if ($msgBlock.attr('data-quote-tts-processed')) return;
+        
+        $msgBlock.attr('data-quote-tts-processed', 'true');
+        const $parentBlock = $msgBlock.closest('.mes_block');
+        const charName = $parentBlock.find('.name_text').text().trim();
+        
+        injectPlayButtons($msgBlock, charName);
+    });
+}
+
+function injectPlayButtons($element, charName) {
+    let html = $element.html();
+    const quoteRegex = /([“"‘「『])([\s\S]*?)([”"’」』])/g;
+
+    const newHtml = html.replace(quoteRegex, (match, openQuote, content, closeQuote) => {
+        if (!content || content.trim().length === 0) return match;
+        const safeContent = encodeURIComponent(content);
+        const safeCharName = encodeURIComponent(charName);
+        
+        return `${openQuote}${content}${closeQuote}<span class="quote-tts-btn interactable" title="播放" onclick="window.playQuoteTTS(this, '${safeContent}', '${safeCharName}')">🔊</span>`;
+    });
+
+    if (html !== newHtml) $element.html(newHtml);
+}
+
+// 挂载到 Window
+window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
+    if (event) event.stopPropagation();
+    
+    const text = decodeURIComponent(encodedText);
+    const charName = decodeURIComponent(encodedCharName);
+    const settings = extension_settings[SETTING_KEY] || { characterMap: {} };
+    const voice = settings.characterMap[charName] || AVAILABLE_VOICES[0];
+    const $btn = $(btnElement);
+
+    $btn.addClass('loading').html('⏳');
+
+    try {
+        const response = await fetch(HARDCODED_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${HARDCODED_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: DEFAULT_MODEL,
+                input: text,
+                voice: voice,
+                response_format: "mp3"
+            })
+        });
+
+        if (!response.ok) throw new Error(`API: ${response.status}`);
+        
+        const blob = await response.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        
+        audio.onended = () => {
+            $btn.removeClass('loading').html('🔊');
+            URL.revokeObjectURL(audioUrl);
+        };
+        audio.onerror = () => {
+            $btn.removeClass('loading').html('❌');
+        };
+        await audio.play();
+    } catch (e) {
+        console.error(e);
+        if (typeof toastr !== 'undefined') toastr.error("TTS 播放失败");
+        $btn.removeClass('loading').html('❌');
+        setTimeout(() => $btn.html('🔊'), 2000);
+    }
+};
