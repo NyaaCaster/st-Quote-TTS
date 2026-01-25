@@ -1,37 +1,6 @@
-/* 播放按钮 */
-.quote-tts-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: 1px solid var(--smart-theme-body-color);
-    color: var(--smart-theme-body-color);
-    border-radius: 50%;
-    width: 22px;
-    height: 22px;
-    margin-left: 5px;
-    cursor: pointer;
-    font-size: 12px;
-    opacity: 0.6;
-    transition: all 0.2s;
-    vertical-align: middle;
-}
+/* ... (保留原有的 .quote-tts-btn 样式) ... */
 
-.quote-tts-btn:hover {
-    opacity: 1;
-    background-color: var(--smart-theme-body-color);
-    color: var(--smart-theme-bg);
-}
-
-.quote-tts-btn.loading {
-    animation: spin 1s linear infinite;
-    cursor: wait;
-    border-style: dashed;
-}
-
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-/* 设置面板列表 */
+/* 设置面板列表容器 */
 .quote-tts-list-container {
     border: 1px solid var(--smart-theme-border);
     background-color: var(--smart-theme-bg);
@@ -42,26 +11,71 @@
     margin-top: 10px;
 }
 
+/* 列表行：使用 Flex 布局两端对齐 */
 .quote-tts-settings-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 8px;
     border-bottom: 1px solid var(--smart-theme-border);
+    gap: 10px;
 }
 
 .quote-tts-settings-row:last-child { border-bottom: none; }
 
+/* 角色名字 */
 .quote-tts-settings-row .char-name {
     font-weight: bold;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 45%;
+    max-width: 40%;
+    flex-shrink: 0;
 }
 
+/* 右侧控制区容器 */
+.quote-tts-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px; /* 按钮和下拉框的间距 */
+    flex-grow: 1;
+    justify-content: flex-end;
+    min-width: 0; /* 防止 flex 子元素溢出 */
+}
+
+/* 试听按钮样式 */
+.quote-tts-preview-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--smart-theme-border);
+    background-color: var(--smart-theme-input-bg);
+    color: var(--smart-theme-body-color);
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.quote-tts-preview-btn:hover {
+    background-color: var(--smart-theme-body-color);
+    color: var(--smart-theme-bg);
+    border-color: var(--smart-theme-body-color);
+}
+
+.quote-tts-preview-btn.loading {
+    animation: spin 1s linear infinite;
+    cursor: wait;
+    border-style: dashed;
+}
+
+/* 下拉菜单 */
 .quote-tts-settings-row select {
-    width: 50%;
+    flex-grow: 1; /* 占据剩余空间 */
+    max-width: 200px; /* 限制最大宽度 */
     padding: 5px;
     border-radius: 5px;
 }
