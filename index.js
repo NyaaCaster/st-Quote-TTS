@@ -4,11 +4,32 @@ import { saveSettingsDebounced, getRequestHeaders, eventSource, event_types } fr
 // ===== 配置常量 =====
 const EXTENSION_NAME = "st-Quote-TTS"; 
 const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/${EXTENSION_NAME}`;
+
+// Edge-TTS 目标配置
 const TARGET_ENDPOINT = "http://h.hony-wen.com:5050/v1/audio/speech";
-// 注意：如果您的 Docker 容器没有设置 API_KEY，请保持这里为空字符串 ""，或者确认容器环境变量 API_KEY=nyaa
-const API_KEY = "nyaa"; 
+const API_KEY = "nyaa"; // 鉴权 Key
 const MODEL_ID = "tts-1-hd";
-const AVAILABLE_VOICES = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-liaoning-XiaobeiNeural", "zh-CN-shaanxi-XiaoniNeural", "zh-HK-HiuGaaiNeural", "zh-HK-HiuMaanNeural", "zh-TW-HsiaoChenNeural", "zh-TW-HsiaoYuNeural", "zh-CN-YunjianNeural", "zh-CN-YunxiNeural", "zh-CN-YunxiaNeural", "zh-CN-YunyangNeural", "zh-HK-WanLungNeural", "zh-TW-YunJheNeural"];
+
+// ST 后端代理接口 (解决 CORS/Fetch 报错的关键)
+const ST_PROXY_URL = "/api/openai/custom/generate-voice";
+
+const AVAILABLE_VOICES = [
+    "zh-CN-XiaoxiaoNeural", 
+    "zh-CN-XiaoyiNeural", 
+    "zh-CN-liaoning-XiaobeiNeural", 
+    "zh-CN-shaanxi-XiaoniNeural", 
+    "zh-HK-HiuGaaiNeural", 
+    "zh-HK-HiuMaanNeural", 
+    "zh-TW-HsiaoChenNeural", 
+    "zh-TW-HsiaoYuNeural", 
+    "zh-CN-YunjianNeural", 
+    "zh-CN-YunxiNeural", 
+    "zh-CN-YunxiaNeural", 
+    "zh-CN-YunyangNeural", 
+    "zh-HK-WanLungNeural", 
+    "zh-TW-YunJheNeural"
+];
+
 const PREVIEW_TEXT = "欢迎使用由妮娅开发的敏捷语音生成插件。";
 const SETTING_KEY = "quote_tts";
 
@@ -60,17 +81,20 @@ function processChatSafe() {
         if ($msgBlock.find('.quote-tts-btn').length > 0) return;
 
         const $parentBlock = $msgBlock.closest('.mes_block');
-        const charName = $parentBlock.find('.name_text').text().trim();
-        injectPlayButtons($msgBlock, charName);
+        const blockSenderName = $parentBlock.find('.name_text').text().trim();
+        injectPlayButtons($msgBlock, blockSenderName);
     });
 }
 
-function injectPlayButtons($element, charName) {
+function injectPlayButtons($element, blockSenderName) {
     let html = $element.html();
-    const quoteRegex = /([“‘「『])([\s\S]*?)([”’」』])/g;
+    
+    // 正则表达式：支持“人名: 引号”模式，同时屏蔽英文双引号
+    // Group 1: 人名(可选), Group 2: 引号内容
+    const smartQuoteRegex = /(?:(?:^|>|[\n\r])\s*([^:<>&"'\n\r]{1,30}?):\s*)?([“‘「『][\s\S]*?[”’」』])(?!\s*<span class="quote-tts-btn)/g;
 
     let hasChanges = false;
-    const newHtml = html.replace(quoteRegex, (match, openQuote, content, closeQuote) => {
+    const newHtml = html.replace(smartQuoteRegex, (match, inlineName, content) => {
         if (!content || content.trim().length === 0) return match;
         if (content.includes('quote-tts-btn')) return match;
 
@@ -78,11 +102,14 @@ function injectPlayButtons($element, charName) {
         tempDiv.innerHTML = content;
         const plainText = tempDiv.textContent || tempDiv.innerText || "";
         
+        // 优先使用捕获的人名，否则使用消息发送者
+        const targetCharName = (inlineName && inlineName.trim()) ? inlineName.trim() : blockSenderName;
+        
         const safeText = encodeURIComponent(plainText);
-        const safeCharName = encodeURIComponent(charName);
+        const safeCharName = encodeURIComponent(targetCharName);
         
         hasChanges = true;
-        return `${openQuote}${content}${closeQuote}<span class="quote-tts-btn interactable" title="播放" onclick="window.playQuoteTTS(this, '${safeText}', '${safeCharName}')">🔊</span>`;
+        return `${match}<span class="quote-tts-btn interactable" title="播放 (${targetCharName})" onclick="window.playQuoteTTS(this, '${safeText}', '${safeCharName}')">🔊</span>`;
     });
 
     if (hasChanges) {
@@ -106,17 +133,26 @@ function renderCharacterSettings() {
         if (currentCharacter && currentCharacter.name) participants.add(currentCharacter.name);
     }
 
+    // 扫描消息块和文本内容中的角色名
     $('#chat .name_text').each(function() {
         const name = $(this).text().trim();
         if (name) participants.add(name);
     });
+    $('#chat .mes_text').each(function() {
+        const text = $(this).text();
+        const inlineNameScanRegex = /(?:^|\n)\s*([^:\n\r]{1,30}?):\s*[“‘「『]/g;
+        let m;
+        while ((m = inlineNameScanRegex.exec(text)) !== null) {
+            if (m[1]) participants.add(m[1].trim());
+        }
+    });
 
     if (participants.size === 0) {
-        $container.html('<div style="padding:15px; text-align:center;">未检测到角色，请先加载对话。</div>');
+        $container.html('<div style="padding:15px; text-align:center;">未检测到角色。</div>');
         return;
     }
 
-    participants.forEach(charName => {
+    Array.from(participants).sort().forEach(charName => {
         const savedVoice = extension_settings[SETTING_KEY].characterMap[charName] || AVAILABLE_VOICES[0];
         let optionsHtml = '';
         AVAILABLE_VOICES.forEach(v => {
@@ -153,8 +189,7 @@ function updateQuoteTTSChar(charName, voice) {
     saveSettingsDebounced();
 }
 
-// ===== 核心功能：播放 (直连模式) =====
-// 修改说明：不再经过 ST 代理，而是直接请求目标 API，以解决 Headers 传递导致的 401 问题
+// ===== 核心功能：代理播放 (解决 CORS 和 401) =====
 async function playTTS(btnElement, text, voice) {
     const $btn = $(btnElement);
     if ($btn.hasClass('loading')) return;
@@ -163,33 +198,25 @@ async function playTTS(btnElement, text, voice) {
     $btn.addClass('loading').html('⏳');
 
     try {
-        console.log(`[Quote TTS] Requesting: ${TARGET_ENDPOINT} | Voice: ${voice}`);
-        
-        // 构造直连 Headers
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        // 只有当 API_KEY 存在时才添加 Authorization 头
-        // 很多本地 Edge-TTS 容器如果没设置密码，收到 Authorization 头反而会报错
-        if (API_KEY && API_KEY.trim() !== "") {
-            headers['Authorization'] = `Bearer ${API_KEY}`;
-        }
-
-        const response = await fetch(TARGET_ENDPOINT, {
+        // 使用 ST 后端代理转发请求
+        const response = await fetch(ST_PROXY_URL, {
             method: 'POST',
-            headers: headers,
+            headers: getRequestHeaders(), 
             body: JSON.stringify({
+                provider_endpoint: TARGET_ENDPOINT, 
                 model: MODEL_ID,
                 input: text,
                 voice: voice,
                 response_format: 'mp3',
-                speed: 1.0 // 可选：添加语速控制
+                // 必须在 body 中传递鉴权信息给 ST 后端
+                api_key: API_KEY,
+                token: API_KEY 
             })
         });
 
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`API ${response.status}: ${errText}`);
+            throw new Error(`ST Proxy ${response.status}: ${errText}`);
         }
         
         const blob = await response.blob();
@@ -201,7 +228,6 @@ async function playTTS(btnElement, text, voice) {
             URL.revokeObjectURL(audioUrl);
         };
         audio.onerror = () => {
-            console.error("Audio playback error");
             $btn.removeClass('loading').html('❌');
             setTimeout(() => $btn.html(originalIcon), 2000);
         };
