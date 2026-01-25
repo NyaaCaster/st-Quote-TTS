@@ -186,16 +186,27 @@ async function playTTS(btnElement, text, voice) {
     $btn.addClass('loading').html('⏳');
 
     try {
+        // 获取 ST 的基础 Headers
+        const headers = getRequestHeaders();
+        // 显式添加 Content-Type
+        headers['Content-Type'] = 'application/json';
+        
+        // ⚠️ 尝试方案：虽然是发给 ST 代理，但 ST 可能会透传 Authorization 头
+        // 如果 ST 代理不支持透传这个头，这行可能无效，但值得一试
+        // headers['Authorization'] = `Bearer ${API_KEY}`; 
+
         const response = await fetch(ST_PROXY_URL, {
             method: 'POST',
-            headers: getRequestHeaders(), 
+            headers: headers, 
             body: JSON.stringify({
                 provider_endpoint: TARGET_ENDPOINT, 
                 model: MODEL_ID,
                 input: text,
                 voice: voice,
                 response_format: 'mp3',
-                api_key: API_KEY
+                // 确保 API KEY 在 Body 里也传一份
+                api_key: API_KEY, 
+                token: API_KEY
             })
         });
 
