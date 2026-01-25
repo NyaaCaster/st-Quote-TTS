@@ -12,111 +12,101 @@ const AVAILABLE_VOICES = [
     "zh-CN-YunyangNeural"
 ];
 
-// 扩展内部标识
 const EXTENSION_NAME = "quote_tts";
+const SETTINGS_CONTAINER_ID = "quote_tts_settings_container";
 
-// ===== HTML 模板 (参考 SillyTavern 标准 Drawer 结构) =====
-// 我们直接将 HTML 写在这里，避免用户需要额外上传 HTML 文件导致路径错误
-const SETTINGS_HTML = `
-<div class="quote-tts-settings-block">
-    <div class="inline-drawer">
-        <div class="inline-drawer-toggle inline-drawer-header">
-            <b>Quote TTS</b>
-            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-        </div>
-        
-        <div class="inline-drawer-content" style="display:none;">
-            <div style="margin-bottom: 10px; font-size: 0.9em; opacity: 0.8; padding: 5px;">
-                <i class="fa-solid fa-circle-info"></i> 
-                API 已预配置，无需手动设置。请下方为角色绑定音色。
+// ===== 核心：设置面板注入逻辑 =====
+
+/**
+ * 检查并注入设置面板
+ * 使用 setInterval 循环调用，以应对 SillyTavern 动态加载扩展菜单的特性
+ */
+function checkAndInjectSettings() {
+    // 1. 检查 ST 的扩展设置容器是否存在
+    const $settingsArea = $("#extensions_settings");
+    if ($settingsArea.length === 0) return;
+
+    // 2. 检查我们自己的面板是否已经存在
+    if ($(`#${SETTINGS_CONTAINER_ID}`).length > 0) return;
+
+    // 3. 定义 HTML 模板 (内联 HTML，无需额外文件)
+    const settingsHtml = `
+    <div id="${SETTINGS_CONTAINER_ID}" class="extension_settings_block">
+        <div class="inline-drawer">
+            <div class="inline-drawer-toggle inline-drawer-header">
+                <b>Quote TTS</b>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             
-            <div class="flex-container alignitemscenter" style="justify-content: space-between; margin-bottom: 10px;">
-                <strong>角色音色配置</strong>
-                <div id="quote_tts_refresh_btn" class="menu_button interactable" title="读取当前对话中的角色">
-                    <i class="fa-solid fa-rotate"></i> 刷新列表
+            <div class="inline-drawer-content" style="display:none;">
+                <div style="margin-bottom: 15px; font-size: 0.9em; opacity: 0.8; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 5px;">
+                    <i class="fa-solid fa-circle-check"></i> 
+                    API 已预置连接至 <code>hony-wen.com</code>。<br>
+                    请点击下方按钮读取当前角色，并分配音色。
                 </div>
-            </div>
+                
+                <div class="flex-container alignitemscenter" style="justify-content: space-between; margin-bottom: 10px;">
+                    <strong>角色音色绑定</strong>
+                    <div id="quote_tts_refresh_btn" class="menu_button interactable">
+                        <i class="fa-solid fa-rotate"></i> 刷新角色列表
+                    </div>
+                </div>
 
-            <div id="quote_tts_char_list" class="quote-tts-list-container">
-                <!-- 角色列表将渲染在这里 -->
-                <div style="text-align:center; padding: 10px; opacity: 0.5;">点击刷新按钮加载角色</div>
+                <div id="quote_tts_char_list" class="quote-tts-list-container">
+                    <div style="text-align:center; padding: 20px; opacity: 0.5;">
+                        请点击“刷新角色列表”按钮
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-</div>
-`;
+    `;
 
-// ===== 初始化逻辑 =====
+    // 4. 注入 DOM
+    $settingsArea.append(settingsHtml);
 
-function ensureInitialized() {
-    if (!extension_settings[EXTENSION_NAME]) {
-        extension_settings[EXTENSION_NAME] = {
-            characterMap: {}
-        };
-        saveSettingsDebounced();
-    }
-}
+    // 5. 绑定折叠/展开事件
+    const $container = $(`#${SETTINGS_CONTAINER_ID}`);
+    const $toggleBtn = $container.find(".inline-drawer-toggle");
+    const $content = $container.find(".inline-drawer-content");
+    const $icon = $toggleBtn.find(".inline-drawer-icon");
 
-// 注入设置面板
-function initSettings() {
-    // 1. 确保设置对象存在
-    ensureInitialized();
-
-    // 2. 找到扩展设置容器
-    const settingsContainer = jQuery("#extensions_settings");
-    if (settingsContainer.length === 0) {
-        console.error("Quote TTS: 未找到 #extensions_settings 容器，尝试稍后重试");
-        setTimeout(initSettings, 500);
-        return;
-    }
-
-    // 3. 避免重复注入
-    if (jQuery(".quote-tts-settings-block").length > 0) return;
-
-    // 4. 追加 HTML
-    settingsContainer.append(SETTINGS_HTML);
-
-    // 5. 绑定 Drawer 折叠/展开事件 (参考 style.css 中的动画)
-    const toggleBtn = settingsContainer.find(".quote-tts-settings-block .inline-drawer-toggle");
-    const contentDiv = settingsContainer.find(".quote-tts-settings-block .inline-drawer-content");
-    const icon = toggleBtn.find(".inline-drawer-icon");
-
-    toggleBtn.on("click", () => {
-        contentDiv.slideToggle(200);
-        if (icon.hasClass("down")) {
-            icon.removeClass("down").addClass("up");
+    $toggleBtn.on("click", () => {
+        $content.slideToggle(200);
+        if ($icon.hasClass("down")) {
+            $icon.removeClass("down").addClass("up");
         } else {
-            icon.removeClass("up").addClass("down");
+            $icon.removeClass("up").addClass("down");
         }
     });
 
-    // 6. 绑定刷新按钮事件
-    jQuery("#quote_tts_refresh_btn").on("click", renderCharacterSettings);
+    // 6. 绑定功能按钮
+    $("#quote_tts_refresh_btn").on("click", renderCharacterSettings);
 }
 
-// ===== 核心逻辑：聊天处理 =====
+// ===== 核心：聊天监听逻辑 =====
 
 function initChatListener() {
-    // 监听聊天区域变化
-    const observer = new MutationObserver((mutations) => {
+    const observer = new MutationObserver(() => {
         processAllMessages();
     });
     
+    // 监听聊天主容器
     const chatContainer = document.querySelector('#chat');
     if (chatContainer) {
         observer.observe(chatContainer, { childList: true, subtree: true });
     }
     
-    // 初始执行一次
+    // 立即处理一次
     processAllMessages();
 }
 
 function processAllMessages() {
-    jQuery('.mes_text').each(function() {
-        const $msgBlock = jQuery(this);
+    // 遍历所有消息文本块
+    $('.mes_text').each(function() {
+        const $msgBlock = $(this);
         
-        // 防止重复处理
+        // 避免重复处理
         if ($msgBlock.attr('data-quote-tts-processed')) return;
         $msgBlock.attr('data-quote-tts-processed', 'true');
 
@@ -130,7 +120,7 @@ function processAllMessages() {
 
 function injectPlayButtons($element, charName) {
     let html = $element.html();
-    // 匹配引号
+    // 匹配引号: "" “” ‘’ 「」 『』
     const quoteRegex = /([“"‘「『])([\s\S]*?)([”"’」』])/g;
 
     const newHtml = html.replace(quoteRegex, (match, openQuote, content, closeQuote) => {
@@ -139,7 +129,7 @@ function injectPlayButtons($element, charName) {
         const safeContent = encodeURIComponent(content);
         const safeCharName = encodeURIComponent(charName);
 
-        // 注意：这里调用 window.playQuoteTTS，需要将其挂载到 window
+        // 插入按钮，调用 window.playQuoteTTS
         return `${openQuote}${content}${closeQuote}<span class="quote-tts-btn interactable" title="播放 TTS" onclick="window.playQuoteTTS(this, '${safeContent}', '${safeCharName}')">🔊</span>`;
     });
 
@@ -148,11 +138,10 @@ function injectPlayButtons($element, charName) {
     }
 }
 
-// ===== 播放逻辑 (挂载到 Window) =====
+// ===== 功能：播放音频 =====
 
 window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
-    // 防止冒泡 (虽然 span onclick 不容易冒泡到消息编辑，但保险起见)
-    if (event) event.stopPropagation();
+    if (event) event.stopPropagation(); // 防止触发消息编辑
 
     const text = decodeURIComponent(encodedText);
     const charName = decodeURIComponent(encodedCharName);
@@ -161,13 +150,13 @@ window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
     const settings = extension_settings[EXTENSION_NAME] || { characterMap: {} };
     let voice = settings.characterMap[charName];
     
+    // 默认音色
     if (!voice) voice = AVAILABLE_VOICES[0];
 
-    const btn = jQuery(btnElement);
-    const originalContent = btn.html();
+    const $btn = $(btnElement);
     
-    // UI Loading
-    btn.addClass('loading').html('⏳');
+    // UI Loading 状态
+    $btn.addClass('loading').html('⏳');
 
     try {
         const response = await fetch(HARDCODED_API_URL, {
@@ -184,48 +173,52 @@ window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
             })
         });
 
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        if (!response.ok) throw new Error(`API Status: ${response.status}`);
 
         const blob = await response.blob();
         const audioUrl = URL.createObjectURL(blob);
         const audio = new Audio(audioUrl);
         
         audio.onended = () => {
-            btn.removeClass('loading').html('🔊'); // 恢复图标
+            $btn.removeClass('loading').html('🔊');
             URL.revokeObjectURL(audioUrl);
         };
         
         audio.onerror = () => {
-            console.error("Audio playback error");
-            btn.removeClass('loading').html('❌');
+            console.error("Playback failed");
+            $btn.removeClass('loading').html('❌');
+            setTimeout(() => $btn.html('🔊'), 2000);
         };
 
         await audio.play();
 
     } catch (error) {
-        console.error('TTS Error:', error);
-        btn.removeClass('loading').html('❌');
-        setTimeout(() => btn.html('🔊'), 2000);
+        console.error('QuoteTTS Error:', error);
+        $btn.removeClass('loading').html('❌');
+        // 使用 toastr 提示 (ST内置库)
+        if (typeof toastr !== 'undefined') toastr.error(`TTS Error: ${error.message}`);
+        setTimeout(() => $btn.html('🔊'), 2000);
     }
 };
 
-// ===== 设置面板：角色列表渲染 =====
+// ===== 功能：渲染角色列表 =====
 
 function renderCharacterSettings() {
-    const $container = jQuery('#quote_tts_char_list');
+    const $container = $('#quote_tts_char_list');
     $container.empty();
 
-    // 从全局变量获取角色
+    // 尝试获取全局角色
     const allChars = window.characters || [];
     
     if (allChars.length === 0) {
-        $container.html('<div style="padding:10px;">未检测到角色，请先加载角色或在聊天中发言。</div>');
+        $container.html('<div style="padding:15px; text-align:center;">暂无角色数据，请先加载角色。</div>');
         return;
     }
 
     allChars.forEach(char => {
         const charName = char.name;
-        // 兼容处理：如果没有设置，默认取第一个
+        // 获取已保存的设置
+        if (!extension_settings[EXTENSION_NAME]) extension_settings[EXTENSION_NAME] = { characterMap: {} };
         const savedVoice = extension_settings[EXTENSION_NAME].characterMap[charName] || AVAILABLE_VOICES[0];
 
         let optionsHtml = '';
@@ -246,16 +239,25 @@ function renderCharacterSettings() {
     });
 }
 
-// 保存配置 (挂载到 Window 供 HTML onchange 调用)
+// 全局保存函数
 window.updateQuoteTTSChar = function(charName, voice) {
     if (!extension_settings[EXTENSION_NAME]) extension_settings[EXTENSION_NAME] = { characterMap: {} };
-    
     extension_settings[EXTENSION_NAME].characterMap[charName] = voice;
     saveSettingsDebounced();
 };
 
-// ===== 主入口 =====
-jQuery(() => {
-    initSettings();
+// ===== 初始化入口 =====
+
+jQuery(async () => {
+    // 1. 初始化设置对象
+    if (!extension_settings[EXTENSION_NAME]) {
+        extension_settings[EXTENSION_NAME] = { characterMap: {} };
+    }
+
+    // 2. 启动聊天监听
     initChatListener();
+
+    // 3. 启动设置面板注入循环
+    // 每 500ms 检查一次设置菜单是否存在，确保动态注入成功
+    setInterval(checkAndInjectSettings, 500);
 });
