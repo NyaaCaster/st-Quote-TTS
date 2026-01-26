@@ -7,10 +7,11 @@ const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/${EXTENSION_NAME}`
 
 // Edge-TTS 目标配置
 const TARGET_ENDPOINT = "http://h.hony-wen.com:5050/v1/audio/speech";
-// const API_KEY = "nyaa"; // <--- 已删除鉴权 Key
+// 这里的 Key 已经不再重要，但必须存在以满足协议格式
+const DUMMY_KEY = "none"; 
 const MODEL_ID = "tts-1-hd";
 
-// ST 后端代理接口 (解决 CORS/Fetch 报错的关键)
+// ST 后端代理接口
 const ST_PROXY_URL = "/api/openai/custom/generate-voice";
 
 const AVAILABLE_VOICES = [
@@ -35,12 +36,10 @@ const SETTING_KEY = "quote_tts";
 
 // ===== 初始化 =====
 jQuery(async () => {
-    // 1. 初始化配置
     if (!extension_settings[SETTING_KEY]) {
         extension_settings[SETTING_KEY] = { characterMap: {} };
     }
 
-    // 2. 注入设置面板
     const checkInterval = setInterval(async () => {
         const $settingsContainer = $("#extensions_settings");
         if ($settingsContainer.length > 0 && $(".quote-tts-extension-settings").length === 0) {
@@ -56,11 +55,10 @@ jQuery(async () => {
         }
     }, 1000);
 
-    // 3. 注册事件监听
     initSafeEventListeners();
 });
 
-// ===== 核心逻辑：安全的事件监听 =====
+// ===== 事件监听逻辑 =====
 function initSafeEventListeners() {
     if (eventSource) {
         eventSource.on(event_types.MESSAGE_RECEIVED, (data) => {
@@ -73,7 +71,7 @@ function initSafeEventListeners() {
     setTimeout(() => processChatSafe(), 2000);
 }
 
-// ===== 核心逻辑：消息处理 =====
+// ===== 消息处理逻辑 =====
 function processChatSafe() {
     $('.mes_text').each(function() {
         const $msgBlock = $(this);
@@ -88,9 +86,7 @@ function processChatSafe() {
 
 function injectPlayButtons($element, blockSenderName) {
     let html = $element.html();
-    
-    // 正则表达式：支持“人名: 引号”模式，同时屏蔽英文双引号
-    // Group 1: 人名(可选), Group 2: 引号内容
+    // 正则捕获：(人名:)? “内容”
     const smartQuoteRegex = /(?:(?:^|>|[\n\r])\s*([^:<>&"'\n\r]{1,30}?):\s*)?([“‘「『][\s\S]*?[”’」』])(?!\s*<span class="quote-tts-btn)/g;
 
     let hasChanges = false;
@@ -102,7 +98,6 @@ function injectPlayButtons($element, blockSenderName) {
         tempDiv.innerHTML = content;
         const plainText = tempDiv.textContent || tempDiv.innerText || "";
         
-        // 优先使用捕获的人名，否则使用消息发送者
         const targetCharName = (inlineName && inlineName.trim()) ? inlineName.trim() : blockSenderName;
         
         const safeText = encodeURIComponent(plainText);
@@ -117,7 +112,7 @@ function injectPlayButtons($element, blockSenderName) {
     }
 }
 
-// ===== 逻辑功能：设置面板 =====
+// ===== 设置面板逻辑 =====
 function renderCharacterSettings() {
     const $container = $('#quote_tts_char_list');
     $container.empty();
@@ -133,7 +128,6 @@ function renderCharacterSettings() {
         if (currentCharacter && currentCharacter.name) participants.add(currentCharacter.name);
     }
 
-    // 扫描消息块和文本内容中的角色名
     $('#chat .name_text').each(function() {
         const name = $(this).text().trim();
         if (name) participants.add(name);
@@ -189,7 +183,7 @@ function updateQuoteTTSChar(charName, voice) {
     saveSettingsDebounced();
 }
 
-// ===== 核心功能：代理播放 (解决 CORS 和 401) =====
+// ===== 核心功能：代理播放 =====
 async function playTTS(btnElement, text, voice) {
     const $btn = $(btnElement);
     if ($btn.hasClass('loading')) return;
@@ -198,7 +192,6 @@ async function playTTS(btnElement, text, voice) {
     $btn.addClass('loading').html('⏳');
 
     try {
-        // 使用 ST 后端代理转发请求
         const response = await fetch(ST_PROXY_URL, {
             method: 'POST',
             headers: getRequestHeaders(), 
@@ -208,10 +201,11 @@ async function playTTS(btnElement, text, voice) {
                 input: text,
                 voice: voice,
                 response_format: 'mp3',
-                // === 修改点：移除了 api_key 和 token 字段 ===
-                // 如果后端 Docker 没有设置 API_KEY，这里不需要发送任何 key。
-                // 如果 ST Proxy 报错缺少字段，可以尝试解开下一行的注释发送个假数据：
-                // api_key: "dummy" 
+                // === 关键修复 ===
+                // 即使服务端不需要鉴权，这里也必须传递非空值。
+                // 否则 ST Proxy 不会生成 Authorization 头，导致 401。
+                api_key: DUMMY_KEY,
+                token: DUMMY_KEY 
             })
         });
 
@@ -243,7 +237,6 @@ async function playTTS(btnElement, text, voice) {
     }
 }
 
-// 暴露给 Window
 window.playQuoteTTS = async function(btnElement, encodedText, encodedCharName) {
     if (event) event.stopPropagation();
     
