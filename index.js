@@ -7,7 +7,7 @@ const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/${EXTENSION_NAME}`
 
 // Edge-TTS 目标配置
 const TARGET_ENDPOINT = "http://h.hony-wen.com:5050/v1/audio/speech";
-const API_KEY = "nyaa"; // 鉴权 Key
+// const API_KEY = "nyaa"; // <--- 已删除鉴权 Key
 const MODEL_ID = "tts-1-hd";
 
 // ST 后端代理接口 (解决 CORS/Fetch 报错的关键)
@@ -208,9 +208,10 @@ async function playTTS(btnElement, text, voice) {
                 input: text,
                 voice: voice,
                 response_format: 'mp3',
-                // 必须在 body 中传递鉴权信息给 ST 后端
-                api_key: API_KEY,
-                token: API_KEY 
+                // === 修改点：移除了 api_key 和 token 字段 ===
+                // 如果后端 Docker 没有设置 API_KEY，这里不需要发送任何 key。
+                // 如果 ST Proxy 报错缺少字段，可以尝试解开下一行的注释发送个假数据：
+                // api_key: "dummy" 
             })
         });
 
