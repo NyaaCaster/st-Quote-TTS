@@ -1,5 +1,5 @@
 # SillyTavern Quote TTS
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/NyaaCaster/st-Quote-TTS/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-AGPL3.0-yellow.svg)](https://github.com/NyaaCaster/st-Quote-TTS/blob/main/LICENSE)
 > _一个为 _[_SillyTavern_](https://github.com/SillyTavern/SillyTavern)_ 设计的敏捷语音扩展插件_
 
 ## ✨ 功能特性
