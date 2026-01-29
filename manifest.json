@@ -6,8 +6,8 @@
     "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "User",
-    "version": "1.0.20",
+    "author": "NyaaCaster",
+    "version": "1.0.21",
     "homePage": "https://github.com/NyaaCaster/st-Quote-TTS/",
     "auto_update": true
 }
